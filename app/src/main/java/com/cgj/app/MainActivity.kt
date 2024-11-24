@@ -112,6 +112,7 @@ fun MainScreen(
 ) {
     var selectedTab by remember { mutableStateOf(0) }
     var showMenu by remember { mutableStateOf(false) }
+    var selectedGradesTab by remember { mutableStateOf(0) }
     val context = LocalContext.current
     
     val tabs = listOf(
@@ -137,8 +138,26 @@ fun MainScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ),
                 actions = {
+                    // Reload Button für alle Screens
+                    IconButton(onClick = {
+                        when (selectedTab) {
+                            0 -> substitutionReloadTrigger.value = !substitutionReloadTrigger.value
+                            1 -> foodReloadTrigger.value = !foodReloadTrigger.value
+                            2 -> moodleReloadTrigger.value = !moodleReloadTrigger.value
+                            3 -> when (selectedGradesTab) {
+                                0 -> homeInfoPointReloadTrigger.value = !homeInfoPointReloadTrigger.value
+                                1 -> gradesPdfReloadTrigger.value = !gradesPdfReloadTrigger.value
+                            }
+                        }
+                    }) {
+                        Icon(
+                            painter = painterResource(android.R.drawable.ic_menu_rotate),
+                            contentDescription = "Neu laden"
+                        )
+                    }
+
+                    // Download Buttons wie bisher
                     if (selectedTab == 0) {
-                        // Download Button für Vertretungsplan
                         IconButton(onClick = {
                             val request = DownloadManager.Request(Uri.parse(SUBSTITUTION_PDF_URL))
                                 .setTitle("Vertretungsplan.pdf")
@@ -156,8 +175,7 @@ fun MainScreen(
                                 contentDescription = "PDF herunterladen"
                             )
                         }
-                    } else if (selectedTab == 3) {
-                        // Download Button für Leistungsnachweise
+                    } else if (selectedTab == 3 && selectedGradesTab == 1) {
                         IconButton(onClick = {
                             val request = DownloadManager.Request(Uri.parse(GRADES_PDF_URL))
                                 .setTitle("Leistungsnachweise.pdf")
@@ -242,44 +260,39 @@ fun MainScreen(
             0 -> SubstitutionScreen(Modifier.padding(innerPadding))
             1 -> FoodScreen(Modifier.padding(innerPadding))
             2 -> MoodleScreen(Modifier.padding(innerPadding))
-            3 -> GradesScreen(Modifier.padding(innerPadding))
+            3 -> GradesScreen(
+                modifier = Modifier.padding(innerPadding),
+                onTabSelected = { selectedGradesTab = it }
+            )
         }
     }
 }
 
 data class TabItem(val title: String, val iconRes: Int)
 
+// Reload Trigger für jeden Screen
+private val substitutionReloadTrigger = mutableStateOf(false)
+private val foodReloadTrigger = mutableStateOf(false)
+private val moodleReloadTrigger = mutableStateOf(false)
+private val homeInfoPointReloadTrigger = mutableStateOf(false)
+private val gradesPdfReloadTrigger = mutableStateOf(false)
+
 @Composable
 fun SubstitutionScreen(modifier: Modifier = Modifier) {
     var isLoading by remember { mutableStateOf(true) }
+    val reloadTrigger by substitutionReloadTrigger
     
     Box(modifier = modifier.fillMaxSize()) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 PDFView(ctx, null).apply {
-                    CoroutineScope(Dispatchers.IO).launch {
-                        try {
-                            val url = URL(SUBSTITUTION_PDF_URL)
-                            val connection = url.openConnection() as HttpURLConnection
-                            connection.connect()
-                            val inputStream = BufferedInputStream(connection.inputStream)
-                            launch(Dispatchers.Main) {
-                                fromStream(inputStream)
-                                    .enableSwipe(true)
-                                    .swipeHorizontal(false)
-                                    .enableDoubletap(true)
-                                    .defaultPage(0)
-                                    .onLoad {
-                                        isLoading = false
-                                    }
-                                    .load()
-                            }
-                        } catch (e: IOException) {
-                            e.printStackTrace()
-                        }
-                    }
+                    loadPdf(SUBSTITUTION_PDF_URL) { isLoading = false }
                 }
+            },
+            update = { view ->
+                isLoading = true
+                view.loadPdf(SUBSTITUTION_PDF_URL) { isLoading = false }
             }
         )
         
@@ -300,6 +313,7 @@ fun SubstitutionScreen(modifier: Modifier = Modifier) {
 @Composable
 fun FoodScreen(modifier: Modifier = Modifier) {
     var isLoading by remember { mutableStateOf(true) }
+    val reloadTrigger by foodReloadTrigger
     
     Box(modifier = modifier.fillMaxSize()) {
         AndroidView(
@@ -312,7 +326,7 @@ fun FoodScreen(modifier: Modifier = Modifier) {
                         databaseEnabled = true
                         allowFileAccess = true
                         allowContentAccess = true
-                        cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
+                        cacheMode = WebSettings.LOAD_NO_CACHE
                     }
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
@@ -321,6 +335,12 @@ fun FoodScreen(modifier: Modifier = Modifier) {
                         }
                     }
                     loadUrl("https://bestellung-ac.mpibs.de")
+                }
+            },
+            update = { webView ->
+                if (reloadTrigger) {
+                    isLoading = true
+                    webView.reload()
                 }
             }
         )
@@ -342,6 +362,7 @@ fun FoodScreen(modifier: Modifier = Modifier) {
 @Composable
 fun MoodleScreen(modifier: Modifier = Modifier) {
     var isLoading by remember { mutableStateOf(true) }
+    val reloadTrigger by moodleReloadTrigger
     
     Box(modifier = modifier.fillMaxSize()) {
         AndroidView(
@@ -354,7 +375,7 @@ fun MoodleScreen(modifier: Modifier = Modifier) {
                         databaseEnabled = true
                         allowFileAccess = true
                         allowContentAccess = true
-                        cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
+                        cacheMode = WebSettings.LOAD_NO_CACHE
                     }
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
@@ -363,6 +384,12 @@ fun MoodleScreen(modifier: Modifier = Modifier) {
                         }
                     }
                     loadUrl("https://moodle.jsp.jena.de")
+                }
+            },
+            update = { webView ->
+                if (reloadTrigger) {
+                    isLoading = true
+                    webView.reload()
                 }
             }
         )
@@ -382,11 +409,13 @@ fun MoodleScreen(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun GradesScreen(modifier: Modifier = Modifier) {
+fun GradesScreen(
+    modifier: Modifier = Modifier,
+    onTabSelected: (Int) -> Unit = {}
+) {
     var selectedTab by remember { mutableStateOf(0) }
     
     Column(modifier = modifier.fillMaxSize()) {
-        // Tabs für die Untermenüs
         TabRow(
             selectedTabIndex = selectedTab,
             containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -394,20 +423,27 @@ fun GradesScreen(modifier: Modifier = Modifier) {
         ) {
             Tab(
                 selected = selectedTab == 0,
-                onClick = { selectedTab = 0 },
+                onClick = { 
+                    selectedTab = 0
+                    onTabSelected(0)
+                },
                 text = { Text("Home.InfoPoint") }
             )
             Tab(
                 selected = selectedTab == 1,
-                onClick = { selectedTab = 1 },
+                onClick = { 
+                    selectedTab = 1
+                    onTabSelected(1)
+                },
                 text = { Text("Leistungsnachweise") }
             )
         }
         
-        // Content basierend auf ausgewähltem Tab
-        when (selectedTab) {
-            0 -> HomeInfoPointScreen()
-            1 -> GradesPdfScreen()
+        Box(modifier = Modifier.weight(1f)) {
+            when (selectedTab) {
+                0 -> HomeInfoPointScreen()
+                1 -> GradesPdfScreen()
+            }
         }
     }
 }
@@ -415,6 +451,7 @@ fun GradesScreen(modifier: Modifier = Modifier) {
 @Composable
 fun HomeInfoPointScreen(modifier: Modifier = Modifier) {
     var isLoading by remember { mutableStateOf(true) }
+    val reloadTrigger by homeInfoPointReloadTrigger
     
     Box(modifier = modifier.fillMaxSize()) {
         AndroidView(
@@ -427,7 +464,7 @@ fun HomeInfoPointScreen(modifier: Modifier = Modifier) {
                         databaseEnabled = true
                         allowFileAccess = true
                         allowContentAccess = true
-                        cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
+                        cacheMode = WebSettings.LOAD_NO_CACHE
                     }
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
@@ -436,6 +473,12 @@ fun HomeInfoPointScreen(modifier: Modifier = Modifier) {
                         }
                     }
                     loadUrl("https://internes.c-g-j.de/default.php")
+                }
+            },
+            update = { webView ->
+                if (reloadTrigger) {
+                    isLoading = true
+                    webView.reload()
                 }
             }
         )
@@ -457,33 +500,20 @@ fun HomeInfoPointScreen(modifier: Modifier = Modifier) {
 @Composable
 fun GradesPdfScreen(modifier: Modifier = Modifier) {
     var isLoading by remember { mutableStateOf(true) }
+    val reloadTrigger by gradesPdfReloadTrigger
     
     Box(modifier = modifier.fillMaxSize()) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 PDFView(ctx, null).apply {
-                    CoroutineScope(Dispatchers.IO).launch {
-                        try {
-                            val url = URL(GRADES_PDF_URL)
-                            val connection = url.openConnection() as HttpURLConnection
-                            connection.connect()
-                            val inputStream = BufferedInputStream(connection.inputStream)
-                            launch(Dispatchers.Main) {
-                                fromStream(inputStream)
-                                    .enableSwipe(true)
-                                    .swipeHorizontal(false)
-                                    .enableDoubletap(true)
-                                    .defaultPage(0)
-                                    .onLoad {
-                                        isLoading = false
-                                    }
-                                    .load()
-                            }
-                        } catch (e: IOException) {
-                            e.printStackTrace()
-                        }
-                    }
+                    loadPdf(GRADES_PDF_URL) { isLoading = false }
+                }
+            },
+            update = { view ->
+                if (reloadTrigger) {
+                    isLoading = true
+                    view.loadPdf(GRADES_PDF_URL) { isLoading = false }
                 }
             }
         )
@@ -498,6 +528,30 @@ fun GradesPdfScreen(modifier: Modifier = Modifier) {
                     color = MaterialTheme.colorScheme.primary
                 )
             }
+        }
+    }
+}
+
+// Hilfsfunktion für PDFView
+private fun PDFView.loadPdf(url: String, onLoadComplete: () -> Unit) {
+    CoroutineScope(Dispatchers.IO).launch {
+        try {
+            val connection = URL(url).openConnection() as HttpURLConnection
+            connection.connect()
+            val inputStream = BufferedInputStream(connection.inputStream)
+            launch(Dispatchers.Main) {
+                fromStream(inputStream)
+                    .enableSwipe(true)
+                    .swipeHorizontal(false)
+                    .enableDoubletap(true)
+                    .defaultPage(0)
+                    .onLoad {
+                        onLoadComplete()
+                    }
+                    .load()
+            }
+        } catch (e: IOException) {
+            e.printStackTrace()
         }
     }
 }
