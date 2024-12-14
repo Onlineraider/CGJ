@@ -61,11 +61,40 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.IOException
+import kotlinx.coroutines.withContext
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 
 val android.content.Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 private val USE_GREEN_THEME = booleanPreferencesKey("use_green_theme")
 private const val SUBSTITUTION_PDF_URL = "https://www.c-g-j.de/asset/bKc51TObRB6ulM2yoIax1g/vertretungsplan.pdf"
-private const val GRADES_PDF_URL = "https://www.c-g-j.de/asset/fP9-RyRHQ1qCnG-3opj34A/"
+private const val GRADES_BASE_URL = "https://www.c-g-j.de"
+private const val GRADES_LIST_URL = "$GRADES_BASE_URL/aktuelles-und-termine/leistungsnachweise/"
+private var currentGradesPdfUrl: String? = null
+
+// Funktion zum Extrahieren der PDF-URL
+private suspend fun fetchGradesPdfUrl(): String? {
+    return withContext(Dispatchers.IO) {
+        try {
+            val connection = URL(GRADES_LIST_URL).openConnection() as HttpURLConnection
+            connection.requestMethod = "GET"
+            
+            val content = connection.inputStream.bufferedReader().use { it.readText() }
+            
+            // Regex zum Finden des PDF-Links
+            val regex = """<a href="(/asset/[^"]+/leistungsnachweise-stand[^"]+\.pdf)">""".toRegex()
+            val match = regex.find(content)
+            
+            match?.groupValues?.get(1)?.let { pdfPath ->
+                "$GRADES_BASE_URL$pdfPath"
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -176,22 +205,24 @@ fun MainScreen(
                             )
                         }
                     } else if (selectedTab == 3 && selectedGradesTab == 1) {
-                        IconButton(onClick = {
-                            val request = DownloadManager.Request(Uri.parse(GRADES_PDF_URL))
-                                .setTitle("Leistungsnachweise.pdf")
-                                .setDescription("CGJ Leistungsnachweise wird heruntergeladen")
-                                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "Leistungsnachweise.pdf")
-                                .setAllowedOverMetered(true)
-                                .setAllowedOverRoaming(true)
+                        currentGradesPdfUrl?.let { pdfUrl ->
+                            IconButton(onClick = {
+                                val request = DownloadManager.Request(Uri.parse(pdfUrl))
+                                    .setTitle("Leistungsnachweise.pdf")
+                                    .setDescription("CGJ Leistungsnachweise wird heruntergeladen")
+                                    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "Leistungsnachweise.pdf")
+                                    .setAllowedOverMetered(true)
+                                    .setAllowedOverRoaming(true)
 
-                            val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                            downloadManager.enqueue(request)
-                        }) {
-                            Icon(
-                                painter = painterResource(android.R.drawable.ic_menu_save),
-                                contentDescription = "PDF herunterladen"
-                            )
+                                val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                                downloadManager.enqueue(request)
+                            }) {
+                                Icon(
+                                    painter = painterResource(android.R.drawable.ic_menu_save),
+                                    contentDescription = "PDF herunterladen"
+                                )
+                            }
                         }
                     }
                     Box {
@@ -501,22 +532,46 @@ fun HomeInfoPointScreen(modifier: Modifier = Modifier) {
 fun GradesPdfScreen(modifier: Modifier = Modifier) {
     var isLoading by remember { mutableStateOf(true) }
     val reloadTrigger by gradesPdfReloadTrigger
+    var pdfUrl by remember { mutableStateOf<String?>(currentGradesPdfUrl) }
+    val coroutineScope = rememberCoroutineScope()
+    
+    // Effekt zum Laden der PDF-URL
+    LaunchedEffect(reloadTrigger) {
+        isLoading = true
+        coroutineScope.launch {
+            pdfUrl = fetchGradesPdfUrl()
+            currentGradesPdfUrl = pdfUrl
+        }
+    }
     
     Box(modifier = modifier.fillMaxSize()) {
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { ctx ->
-                PDFView(ctx, null).apply {
-                    loadPdf(GRADES_PDF_URL) { isLoading = false }
+        pdfUrl?.let { url ->
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { ctx ->
+                    PDFView(ctx, null).apply {
+                        loadPdf(url) { isLoading = false }
+                    }
+                },
+                update = { view ->
+                    if (reloadTrigger) {
+                        isLoading = true
+                        view.loadPdf(url) { isLoading = false }
+                    }
                 }
-            },
-            update = { view ->
-                if (reloadTrigger) {
-                    isLoading = true
-                    view.loadPdf(GRADES_PDF_URL) { isLoading = false }
-                }
+            )
+        } ?: run {
+            // Zeige Fehlermeldung wenn PDF-URL nicht gefunden wurde
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "PDF konnte nicht geladen werden",
+                    color = MaterialTheme.colorScheme.error
+                )
             }
-        )
+        }
         
         if (isLoading) {
             Box(
