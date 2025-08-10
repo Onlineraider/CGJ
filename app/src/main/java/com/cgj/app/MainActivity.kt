@@ -8,6 +8,8 @@ import android.webkit.WebViewClient
 import android.webkit.CookieManager
 import android.app.DownloadManager
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Environment
 import androidx.activity.ComponentActivity
@@ -126,6 +128,42 @@ private suspend fun fetchSubstitutionPdfUrl(): String? {
     }
 }
 
+// Funktion zum Öffnen der Moodle-App oder Weiterleitung zum Store
+private fun openMoodleApp(context: Context) {
+    val packageName = "com.moodle.moodlemobile"
+    
+    try {
+        // Prüfe ob die Moodle-App installiert ist
+        val packageManager = context.packageManager
+        val intent = packageManager.getLaunchIntentForPackage(packageName)
+        
+        if (intent != null) {
+            // App ist installiert - öffne sie
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        } else {
+            // App ist nicht installiert - öffne Store
+            val storeIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName"))
+            storeIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            
+            try {
+                context.startActivity(storeIntent)
+            } catch (e: Exception) {
+                // Falls Google Play Store nicht verfügbar ist, öffne Browser
+                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$packageName"))
+                browserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(browserIntent)
+            }
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+        // Fallback: Öffne Moodle im Browser
+        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://moodle.jsp.jena.de"))
+        browserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(browserIntent)
+    }
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -197,22 +235,23 @@ fun MainScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ),
                 actions = {
-                    // Reload Button für alle Screens
-                    IconButton(onClick = {
-                        when (selectedTab) {
-                            0 -> substitutionReloadTrigger.value = !substitutionReloadTrigger.value
-                            1 -> foodReloadTrigger.value = !foodReloadTrigger.value
-                            2 -> moodleReloadTrigger.value = !moodleReloadTrigger.value
-                            3 -> when (selectedGradesTab) {
-                                0 -> homeInfoPointReloadTrigger.value = !homeInfoPointReloadTrigger.value
-                                1 -> gradesPdfReloadTrigger.value = !gradesPdfReloadTrigger.value
+                    // Reload Button für alle Screens (außer Moodle)
+                    if (selectedTab != 2) { // Moodle-Tab überspringen
+                        IconButton(onClick = {
+                            when (selectedTab) {
+                                0 -> substitutionReloadTrigger.value = !substitutionReloadTrigger.value
+                                1 -> foodReloadTrigger.value = !foodReloadTrigger.value
+                                3 -> when (selectedGradesTab) {
+                                    0 -> homeInfoPointReloadTrigger.value = !homeInfoPointReloadTrigger.value
+                                    1 -> gradesPdfReloadTrigger.value = !gradesPdfReloadTrigger.value
+                                }
                             }
+                        }) {
+                            Icon(
+                                painter = painterResource(android.R.drawable.ic_menu_rotate),
+                                contentDescription = "Neu laden"
+                            )
                         }
-                    }) {
-                        Icon(
-                            painter = painterResource(android.R.drawable.ic_menu_rotate),
-                            contentDescription = "Neu laden"
-                        )
                     }
 
                     // Download Buttons
@@ -356,7 +395,6 @@ data class TabItem(val title: String, val iconRes: Int)
 // Reload Trigger für jeden Screen
 private val substitutionReloadTrigger = mutableStateOf(false)
 private val foodReloadTrigger = mutableStateOf(false)
-private val moodleReloadTrigger = mutableStateOf(false)
 private val homeInfoPointReloadTrigger = mutableStateOf(false)
 private val gradesPdfReloadTrigger = mutableStateOf(false)
 
@@ -489,49 +527,30 @@ fun FoodScreen(modifier: Modifier = Modifier) {
 
 @Composable
 fun MoodleScreen(modifier: Modifier = Modifier) {
-    var isLoading by remember { mutableStateOf(true) }
-    val reloadTrigger by moodleReloadTrigger
+    val context = LocalContext.current
     
-    Box(modifier = modifier.fillMaxSize()) {
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { context ->
-                WebView(context).apply {
-                    settings.apply {
-                        javaScriptEnabled = true
-                        domStorageEnabled = true
-                        databaseEnabled = true
-                        allowFileAccess = true
-                        allowContentAccess = true
-                        cacheMode = WebSettings.LOAD_NO_CACHE
-                    }
-                    webViewClient = object : WebViewClient() {
-                        override fun onPageFinished(view: WebView?, url: String?) {
-                            super.onPageFinished(view, url)
-                            isLoading = false
-                        }
-                    }
-                    loadUrl("https://moodle.jsp.jena.de")
-                }
-            },
-            update = { webView ->
-                if (reloadTrigger) {
-                    isLoading = true
-                    webView.reload()
-                }
-            }
-        )
-        
-        if (isLoading) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(50.dp),
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
+    // Automatische Weiterleitung zur Moodle-App beim ersten Laden
+    LaunchedEffect(Unit) {
+        openMoodleApp(context)
+    }
+    
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(50.dp),
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = "Weiterleitung zur Moodle-App...",
+                modifier = Modifier.padding(top = 16.dp),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }
