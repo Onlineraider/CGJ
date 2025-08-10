@@ -257,43 +257,26 @@ fun MainScreen(
                     // Download Buttons
                     if (selectedTab == 0) {
                         // Download für Vertretungsplan (PDF oder Bild)
-                        currentSubstitutionPdfUrl?.let { pdfUrl ->
-                            IconButton(onClick = {
-                                val request = DownloadManager.Request(Uri.parse(pdfUrl))
-                                    .setTitle("Vertretungsplan.pdf")
-                                    .setDescription("CGJ Vertretungsplan wird heruntergeladen")
-                                    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "Vertretungsplan.pdf")
-                                    .setAllowedOverMetered(true)
-                                    .setAllowedOverRoaming(true)
+                        IconButton(onClick = {
+                            val downloadUrl = currentSubstitutionPdfUrl ?: SUBSTITUTION_IMAGE_URL
+                            val fileName = if (currentSubstitutionPdfUrl != null) "Vertretungsplan.pdf" else "Vertretungsplan.png"
+                            val title = if (currentSubstitutionPdfUrl != null) "Vertretungsplan.pdf" else "Vertretungsplan.png"
+                            
+                            val request = DownloadManager.Request(Uri.parse(downloadUrl))
+                                .setTitle(title)
+                                .setDescription("CGJ Vertretungsplan wird heruntergeladen")
+                                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+                                .setAllowedOverMetered(true)
+                                .setAllowedOverRoaming(true)
 
-                                val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                                downloadManager.enqueue(request)
-                            }) {
-                                Icon(
-                                    painter = painterResource(android.R.drawable.ic_menu_save),
-                                    contentDescription = "PDF herunterladen"
-                                )
-                            }
-                        } ?: run {
-                            // Fallback: Bild herunterladen
-                            IconButton(onClick = {
-                                val request = DownloadManager.Request(Uri.parse(SUBSTITUTION_IMAGE_URL))
-                                    .setTitle("Vertretungsplan.png")
-                                    .setDescription("CGJ Vertretungsplan wird heruntergeladen")
-                                    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "Vertretungsplan.png")
-                                    .setAllowedOverMetered(true)
-                                    .setAllowedOverRoaming(true)
-
-                                val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                                downloadManager.enqueue(request)
-                            }) {
-                                Icon(
-                                    painter = painterResource(android.R.drawable.ic_menu_save),
-                                    contentDescription = "Bild herunterladen"
-                                )
-                            }
+                            val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                            downloadManager.enqueue(request)
+                        }) {
+                            Icon(
+                                painter = painterResource(android.R.drawable.ic_menu_save),
+                                contentDescription = if (currentSubstitutionPdfUrl != null) "PDF herunterladen" else "Bild herunterladen"
+                            )
                         }
                     } else if (selectedTab == 3 && selectedGradesTab == 1) {
                         currentGradesPdfUrl?.let { pdfUrl ->
