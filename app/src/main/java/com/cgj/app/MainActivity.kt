@@ -78,9 +78,9 @@ private const val GRADES_BASE_URL = "https://www.c-g-j.de"
 private const val GRADES_LIST_URL = "$GRADES_BASE_URL/aktuelles-und-termine/leistungsnachweise/"
 private const val SUBSTITUTION_BASE_URL = "https://www.c-g-j.de"
 private const val SUBSTITUTION_PAGE_URL = "$SUBSTITUTION_BASE_URL/aktuelles-und-termine/vertretungsplan/"
-private const val SUBSTITUTION_IMAGE_URL = "$SUBSTITUTION_PAGE_URL/vplan.png"
 private var currentGradesPdfUrl: String? = null
 private var currentSubstitutionPdfUrl: String? = null
+private var currentSubstitutionImageUrl: String? = null
 
 // Funktion zum Extrahieren der PDF-URL für Leistungsnachweise
 private suspend fun fetchGradesPdfUrl(): String? {
@@ -105,8 +105,8 @@ private suspend fun fetchGradesPdfUrl(): String? {
     }
 }
 
-// Funktion zum Extrahieren der Vertretungsplan-PDF-URL
-private suspend fun fetchSubstitutionPdfUrl(): String? {
+// Funktion zum Extrahieren der Vertretungsplan-PDF-URL und Bild-URL
+private suspend fun fetchSubstitutionUrls(): Pair<String?, String?> {
     return withContext(Dispatchers.IO) {
         try {
             val connection = URL(SUBSTITUTION_PAGE_URL).openConnection() as HttpURLConnection
@@ -115,15 +115,23 @@ private suspend fun fetchSubstitutionPdfUrl(): String? {
             val content = connection.inputStream.bufferedReader().use { it.readText() }
             
             // Regex zum Finden des PDF-Links für Vertretungsplan
-            val regex = """<a href="(/asset/[^"]+/vertretungsplan[^"]*\.pdf)">""".toRegex()
-            val match = regex.find(content)
-            
-            match?.groupValues?.get(1)?.let { pdfPath ->
+            val pdfRegex = """<a href="(/asset/[^"]+/vertretungsplan[^"]*\.pdf)">""".toRegex()
+            val pdfMatch = pdfRegex.find(content)
+            val pdfUrl = pdfMatch?.groupValues?.get(1)?.let { pdfPath ->
                 "$SUBSTITUTION_BASE_URL$pdfPath"
             }
+            
+            // Regex zum Finden des Bild-Links für Vertretungsplan
+            val imageRegex = """<img[^>]+src="(/asset/[^"]+/vplan\.png)"[^>]*>""".toRegex()
+            val imageMatch = imageRegex.find(content)
+            val imageUrl = imageMatch?.groupValues?.get(1)?.let { imagePath ->
+                "$SUBSTITUTION_BASE_URL$imagePath"
+            }
+            
+            Pair(pdfUrl, imageUrl)
         } catch (e: Exception) {
             e.printStackTrace()
-            null
+            Pair(null, null)
         }
     }
 }
@@ -259,31 +267,40 @@ fun MainScreen(
                         if (selectedTab == 0) {
                             // Download für Vertretungsplan (PDF oder Bild)
                             IconButton(onClick = {
-                                val downloadUrl = currentSubstitutionPdfUrl ?: SUBSTITUTION_IMAGE_URL
-                                val fileName = if (currentSubstitutionPdfUrl != null) "Vertretungsplan.pdf" else "Vertretungsplan.png"
-                                val title = if (currentSubstitutionPdfUrl != null) "Vertretungsplan.pdf" else "Vertretungsplan.png"
-                                
-                                val request = DownloadManager.Request(Uri.parse(downloadUrl))
-                                    .setTitle(title)
-                                    .setDescription("CGJ Vertretungsplan wird heruntergeladen")
-                                    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-                                    .setAllowedOverMetered(true)
-                                    .setAllowedOverRoaming(true)
+                                val downloadUrl = currentSubstitutionPdfUrl ?: currentSubstitutionImageUrl
+                                if (downloadUrl != null) {
+                                    val fileName = if (currentSubstitutionPdfUrl != null) "Vertretungsplan.pdf" else "Vertretungsplan.png"
+                                    val title = if (currentSubstitutionPdfUrl != null) "Vertretungsplan.pdf" else "Vertretungsplan.png"
+                                    
+                                    val request = DownloadManager.Request(Uri.parse(downloadUrl))
+                                        .setTitle(title)
+                                        .setDescription("CGJ Vertretungsplan wird heruntergeladen")
+                                        .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                                        .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+                                        .setAllowedOverMetered(true)
+                                        .setAllowedOverRoaming(true)
 
-                                val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                                downloadManager.enqueue(request)
+                                    val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                                    downloadManager.enqueue(request)
+                                } else {
+                                    // Fallback: Versuche die URLs neu zu laden
+                                    substitutionReloadTrigger.value = !substitutionReloadTrigger.value
+                                }
                             }) {
                                 Icon(
                                     painter = painterResource(android.R.drawable.ic_menu_save),
-                                    contentDescription = if (currentSubstitutionPdfUrl != null) "PDF herunterladen" else "Bild herunterladen"
+                                    contentDescription = when {
+                                        currentSubstitutionPdfUrl != null -> "PDF herunterladen"
+                                        currentSubstitutionImageUrl != null -> "Bild herunterladen"
+                                        else -> "Neu laden"
+                                    }
                                 )
                             }
                         } else if (selectedTab == 3 && selectedGradesTab == 1) {
-                            // Download für Leistungsnachweise (immer verfügbar)
+                            // Download für Leistungsnachweise
                             IconButton(onClick = {
-                                currentGradesPdfUrl?.let { pdfUrl ->
-                                    val request = DownloadManager.Request(Uri.parse(pdfUrl))
+                                if (currentGradesPdfUrl != null) {
+                                    val request = DownloadManager.Request(Uri.parse(currentGradesPdfUrl))
                                         .setTitle("Leistungsnachweise.pdf")
                                         .setDescription("CGJ Leistungsnachweise wird heruntergeladen")
                                         .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
@@ -293,7 +310,7 @@ fun MainScreen(
 
                                     val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
                                     downloadManager.enqueue(request)
-                                } ?: run {
+                                } else {
                                     // Fallback: Versuche die PDF-URL neu zu laden
                                     gradesPdfReloadTrigger.value = !gradesPdfReloadTrigger.value
                                 }
@@ -415,18 +432,22 @@ private val gradesPdfReloadTrigger = mutableStateOf(false)
 fun SubstitutionScreen(modifier: Modifier = Modifier) {
     var isLoading by remember { mutableStateOf(true) }
     var pdfUrl by remember { mutableStateOf<String?>(currentSubstitutionPdfUrl) }
+    var imageUrl by remember { mutableStateOf<String?>(currentSubstitutionImageUrl) }
     var showImage by remember { mutableStateOf(false) }
     val reloadTrigger by substitutionReloadTrigger
     val coroutineScope = rememberCoroutineScope()
     
-    // Effekt zum Laden der PDF-URL beim ersten Start und bei Reload
+    // Effekt zum Laden der URLs beim ersten Start und bei Reload
     LaunchedEffect(Unit) {
         isLoading = true
         showImage = false
         coroutineScope.launch {
-            pdfUrl = fetchSubstitutionPdfUrl()
-            currentSubstitutionPdfUrl = pdfUrl
-            if (pdfUrl == null) {
+            val (pdf, image) = fetchSubstitutionUrls()
+            pdfUrl = pdf
+            imageUrl = image
+            currentSubstitutionPdfUrl = pdf
+            currentSubstitutionImageUrl = image
+            if (pdf == null && image != null) {
                 showImage = true
             }
             isLoading = false
@@ -437,9 +458,12 @@ fun SubstitutionScreen(modifier: Modifier = Modifier) {
         isLoading = true
         showImage = false
         coroutineScope.launch {
-            pdfUrl = fetchSubstitutionPdfUrl()
-            currentSubstitutionPdfUrl = pdfUrl
-            if (pdfUrl == null) {
+            val (pdf, image) = fetchSubstitutionUrls()
+            pdfUrl = pdf
+            imageUrl = image
+            currentSubstitutionPdfUrl = pdf
+            currentSubstitutionImageUrl = image
+            if (pdf == null && image != null) {
                 showImage = true
             }
             isLoading = false
@@ -463,16 +487,38 @@ fun SubstitutionScreen(modifier: Modifier = Modifier) {
                     }
                 }
             )
-        } else if (showImage) {
+        } else if (showImage && imageUrl != null) {
             // Bild anzeigen
             AsyncImage(
-                model = SUBSTITUTION_IMAGE_URL,
+                model = imageUrl,
                 contentDescription = "Vertretungsplan",
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Fit,
                 onSuccess = { isLoading = false },
                 onError = { isLoading = false }
             )
+        } else if (pdfUrl == null && imageUrl == null) {
+            // Keine Daten verfügbar
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        "Vertretungsplan nicht verfügbar",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        "Versuchen Sie es erneut mit dem Reload-Button",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            }
         }
         
         if (isLoading) {
