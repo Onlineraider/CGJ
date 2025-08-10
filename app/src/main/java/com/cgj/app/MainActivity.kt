@@ -222,70 +222,52 @@ fun MainScreen(
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
-            TopAppBar(
-                title = { 
-                    Text(
-                        "CGJ",
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    ) 
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                ),
-                actions = {
-                    // Reload Button für alle Screens (außer Moodle)
-                    if (selectedTab != 2) { // Moodle-Tab überspringen
-                        IconButton(onClick = {
-                            when (selectedTab) {
-                                0 -> substitutionReloadTrigger.value = !substitutionReloadTrigger.value
-                                1 -> foodReloadTrigger.value = !foodReloadTrigger.value
-                                3 -> when (selectedGradesTab) {
-                                    0 -> homeInfoPointReloadTrigger.value = !homeInfoPointReloadTrigger.value
-                                    1 -> gradesPdfReloadTrigger.value = !gradesPdfReloadTrigger.value
-                                }
-                            }
-                        }) {
-                            Icon(
-                                painter = painterResource(android.R.drawable.ic_menu_rotate),
-                                contentDescription = "Neu laden"
-                            )
-                        }
-                    }
-
-                    // Download Buttons
-                    if (selectedTab == 0) {
-                        // Download für Vertretungsplan (PDF oder Bild)
-                        IconButton(onClick = {
-                            val downloadUrl = currentSubstitutionPdfUrl ?: SUBSTITUTION_IMAGE_URL
-                            val fileName = if (currentSubstitutionPdfUrl != null) "Vertretungsplan.pdf" else "Vertretungsplan.png"
-                            val title = if (currentSubstitutionPdfUrl != null) "Vertretungsplan.pdf" else "Vertretungsplan.png"
-                            
-                            val request = DownloadManager.Request(Uri.parse(downloadUrl))
-                                .setTitle(title)
-                                .setDescription("CGJ Vertretungsplan wird heruntergeladen")
-                                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-                                .setAllowedOverMetered(true)
-                                .setAllowedOverRoaming(true)
-
-                            val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                            downloadManager.enqueue(request)
-                        }) {
-                            Icon(
-                                painter = painterResource(android.R.drawable.ic_menu_save),
-                                contentDescription = if (currentSubstitutionPdfUrl != null) "PDF herunterladen" else "Bild herunterladen"
-                            )
-                        }
-                    } else if (selectedTab == 3 && selectedGradesTab == 1) {
-                        currentGradesPdfUrl?.let { pdfUrl ->
+            Column {
+                TopAppBar(
+                    title = { 
+                        Text(
+                            "CGJ",
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        ) 
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    ),
+                    actions = {
+                        // Reload Button für alle Screens (außer Moodle)
+                        if (selectedTab != 2) { // Moodle-Tab überspringen
                             IconButton(onClick = {
-                                val request = DownloadManager.Request(Uri.parse(pdfUrl))
-                                    .setTitle("Leistungsnachweise.pdf")
-                                    .setDescription("CGJ Leistungsnachweise wird heruntergeladen")
+                                when (selectedTab) {
+                                    0 -> substitutionReloadTrigger.value = !substitutionReloadTrigger.value
+                                    1 -> foodReloadTrigger.value = !foodReloadTrigger.value
+                                    3 -> when (selectedGradesTab) {
+                                        0 -> homeInfoPointReloadTrigger.value = !homeInfoPointReloadTrigger.value
+                                        1 -> gradesPdfReloadTrigger.value = !gradesPdfReloadTrigger.value
+                                    }
+                                }
+                            }) {
+                                Icon(
+                                    painter = painterResource(android.R.drawable.ic_menu_rotate),
+                                    contentDescription = "Neu laden"
+                                )
+                            }
+                        }
+
+                        // Download Buttons
+                        if (selectedTab == 0) {
+                            // Download für Vertretungsplan (PDF oder Bild)
+                            IconButton(onClick = {
+                                val downloadUrl = currentSubstitutionPdfUrl ?: SUBSTITUTION_IMAGE_URL
+                                val fileName = if (currentSubstitutionPdfUrl != null) "Vertretungsplan.pdf" else "Vertretungsplan.png"
+                                val title = if (currentSubstitutionPdfUrl != null) "Vertretungsplan.pdf" else "Vertretungsplan.png"
+                                
+                                val request = DownloadManager.Request(Uri.parse(downloadUrl))
+                                    .setTitle(title)
+                                    .setDescription("CGJ Vertretungsplan wird heruntergeladen")
                                     .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "Leistungsnachweise.pdf")
+                                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
                                     .setAllowedOverMetered(true)
                                     .setAllowedOverRoaming(true)
 
@@ -294,33 +276,81 @@ fun MainScreen(
                             }) {
                                 Icon(
                                     painter = painterResource(android.R.drawable.ic_menu_save),
-                                    contentDescription = "PDF herunterladen"
+                                    contentDescription = if (currentSubstitutionPdfUrl != null) "PDF herunterladen" else "Bild herunterladen"
+                                )
+                            }
+                        } else if (selectedTab == 3 && selectedGradesTab == 1) {
+                            // Download für Leistungsnachweise (immer verfügbar)
+                            IconButton(onClick = {
+                                currentGradesPdfUrl?.let { pdfUrl ->
+                                    val request = DownloadManager.Request(Uri.parse(pdfUrl))
+                                        .setTitle("Leistungsnachweise.pdf")
+                                        .setDescription("CGJ Leistungsnachweise wird heruntergeladen")
+                                        .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                                        .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "Leistungsnachweise.pdf")
+                                        .setAllowedOverMetered(true)
+                                        .setAllowedOverRoaming(true)
+
+                                    val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                                    downloadManager.enqueue(request)
+                                } ?: run {
+                                    // Fallback: Versuche die PDF-URL neu zu laden
+                                    gradesPdfReloadTrigger.value = !gradesPdfReloadTrigger.value
+                                }
+                            }) {
+                                Icon(
+                                    painter = painterResource(android.R.drawable.ic_menu_save),
+                                    contentDescription = if (currentGradesPdfUrl != null) "PDF herunterladen" else "PDF neu laden"
+                                )
+                            }
+                        }
+                        
+                        Box {
+                            IconButton(onClick = { showMenu = true }) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_more),
+                                    contentDescription = "Mehr"
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(if (useGreenTheme) "System Farben" else "Grünes Theme") },
+                                    onClick = {
+                                        onThemeChange(!useGreenTheme)
+                                        showMenu = false
+                                    }
                                 )
                             }
                         }
                     }
-                    Box {
-                        IconButton(onClick = { showMenu = true }) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_more),
-                                contentDescription = "Mehr"
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text(if (useGreenTheme) "System Farben" else "Grünes Theme") },
-                                onClick = {
-                                    onThemeChange(!useGreenTheme)
-                                    showMenu = false
-                                }
-                            )
-                        }
+                )
+                
+                // Grades Tab Row (nur wenn Leistungen-Tab ausgewählt ist)
+                if (selectedTab == 3) {
+                    TabRow(
+                        selectedTabIndex = selectedGradesTab,
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Tab(
+                            selected = selectedGradesTab == 0,
+                            onClick = { selectedGradesTab = 0 },
+                            text = { Text("Home.InfoPoint") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        Tab(
+                            selected = selectedGradesTab == 1,
+                            onClick = { selectedGradesTab = 1 },
+                            text = { Text("Leistungsnachweise") },
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
-            )
+            }
         },
         bottomBar = {
             NavigationBar(
@@ -367,7 +397,7 @@ fun MainScreen(
             2 -> MoodleScreen(Modifier.padding(innerPadding))
             3 -> GradesScreen(
                 modifier = Modifier.padding(innerPadding),
-                onTabSelected = { selectedGradesTab = it }
+                selectedGradesTab = selectedGradesTab
             )
         }
     }
@@ -541,40 +571,11 @@ fun MoodleScreen(modifier: Modifier = Modifier) {
 @Composable
 fun GradesScreen(
     modifier: Modifier = Modifier,
-    onTabSelected: (Int) -> Unit = {}
+    selectedGradesTab: Int
 ) {
-    var selectedTab by remember { mutableStateOf(0) }
-    
-    Column(modifier = modifier.fillMaxSize()) {
-        TabRow(
-            selectedTabIndex = selectedTab,
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-        ) {
-            Tab(
-                selected = selectedTab == 0,
-                onClick = { 
-                    selectedTab = 0
-                    onTabSelected(0)
-                },
-                text = { Text("Home.InfoPoint") }
-            )
-            Tab(
-                selected = selectedTab == 1,
-                onClick = { 
-                    selectedTab = 1
-                    onTabSelected(1)
-                },
-                text = { Text("Leistungsnachweise") }
-            )
-        }
-        
-        Box(modifier = Modifier.weight(1f)) {
-            when (selectedTab) {
-                0 -> HomeInfoPointScreen()
-                1 -> GradesPdfScreen()
-            }
-        }
+    when (selectedGradesTab) {
+        0 -> HomeInfoPointScreen(modifier)
+        1 -> GradesPdfScreen(modifier)
     }
 }
 
@@ -634,12 +635,22 @@ fun GradesPdfScreen(modifier: Modifier = Modifier) {
     var pdfUrl by remember { mutableStateOf<String?>(currentGradesPdfUrl) }
     val coroutineScope = rememberCoroutineScope()
     
-    // Effekt zum Laden der PDF-URL
+    // Effekt zum Laden der PDF-URL beim ersten Start und bei Reload
+    LaunchedEffect(Unit) {
+        isLoading = true
+        coroutineScope.launch {
+            pdfUrl = fetchGradesPdfUrl()
+            currentGradesPdfUrl = pdfUrl
+            isLoading = false
+        }
+    }
+    
     LaunchedEffect(reloadTrigger) {
         isLoading = true
         coroutineScope.launch {
             pdfUrl = fetchGradesPdfUrl()
             currentGradesPdfUrl = pdfUrl
+            isLoading = false
         }
     }
     
@@ -665,10 +676,21 @@ fun GradesPdfScreen(modifier: Modifier = Modifier) {
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    "PDF konnte nicht geladen werden",
-                    color = MaterialTheme.colorScheme.error
-                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        "PDF konnte nicht geladen werden",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        "Versuchen Sie es erneut mit dem Reload-Button",
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
             }
         }
         
