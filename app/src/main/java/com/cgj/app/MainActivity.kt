@@ -69,7 +69,6 @@ import kotlinx.coroutines.launch
 import java.io.IOException
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.LaunchedEffect
-import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 
 val android.content.Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
