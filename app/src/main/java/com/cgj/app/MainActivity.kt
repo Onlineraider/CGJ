@@ -71,9 +71,25 @@ import java.io.IOException
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.awaitPointerEventScope
+import androidx.compose.ui.input.pointer.awaitPointerEvent
+import androidx.compose.ui.input.pointer.pointerEvent
+import androidx.compose.ui.input.pointer.pointerEventScope
+import androidx.compose.ui.input.pointer.detectTransformGestures
+import androidx.compose.ui.graphics.graphicsLayer
+import android.provider.MediaStore
+import android.widget.Toast
+import okhttp3.OkHttpClient
+import okhttp3.Request as OkHttpRequest
+import okhttp3.ResponseBody
+import java.io.OutputStream
+import java.io.File
+import java.io.FileOutputStream
 
 val android.content.Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 private val USE_GREEN_THEME = booleanPreferencesKey("use_green_theme")
+private val USE_MOODLE_WEBVIEW = booleanPreferencesKey("use_moodle_webview")
 private const val GRADES_BASE_URL = "https://www.c-g-j.de"
 private const val GRADES_LIST_URL = "$GRADES_BASE_URL/aktuelles-und-termine/leistungsnachweise/"
 private const val SUBSTITUTION_BASE_URL = "https://www.c-g-j.de"
@@ -172,6 +188,44 @@ private fun openMoodleApp(context: Context) {
     }
 }
 
+// Download-Logik für Datei (PDF/Bild) mit OkHttp und MediaStore
+private fun downloadFile(context: Context, url: String, fileName: String, mimeType: String) {
+    CoroutineScope(Dispatchers.IO).launch {
+        try {
+            val client = OkHttpClient()
+            val request = OkHttpRequest.Builder().url(url).build()
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) throw Exception("Download fehlgeschlagen: ${response.code}")
+            val body = response.body ?: throw Exception("Leerer Download-Body")
+
+            val resolver = context.contentResolver
+            val contentValues = android.content.ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, mimeType)
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            val itemUri = resolver.insert(collection, contentValues)
+                ?: throw Exception("Fehler beim Anlegen der Datei")
+            resolver.openOutputStream(itemUri).use { outStream ->
+                if (outStream == null) throw Exception("Fehler beim Öffnen des Ausgabestreams")
+                body.byteStream().copyTo(outStream)
+            }
+            contentValues.clear()
+            contentValues.put(MediaStore.Downloads.IS_PENDING, 0)
+            resolver.update(itemUri, contentValues, null, null)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, "$fileName wurde heruntergeladen", Toast.LENGTH_LONG).show()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, "Download fehlgeschlagen: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -219,7 +273,8 @@ fun MainScreen(
     var showMenu by remember { mutableStateOf(false) }
     var selectedGradesTab by remember { mutableStateOf(0) }
     val context = LocalContext.current
-    
+    val dataStore = context.dataStore
+    val useMoodleWebView by dataStore.data.map { it[USE_MOODLE_WEBVIEW] ?: false }.collectAsState(initial = false)
     val tabs = listOf(
         TabItem("Vertretung", R.drawable.ic_substitution),
         TabItem("Essen", R.drawable.ic_food),
@@ -270,18 +325,8 @@ fun MainScreen(
                                 val downloadUrl = currentSubstitutionPdfUrl ?: currentSubstitutionImageUrl
                                 if (downloadUrl != null) {
                                     val fileName = if (currentSubstitutionPdfUrl != null) "Vertretungsplan.pdf" else "Vertretungsplan.png"
-                                    val title = if (currentSubstitutionPdfUrl != null) "Vertretungsplan.pdf" else "Vertretungsplan.png"
-                                    
-                                    val request = DownloadManager.Request(Uri.parse(downloadUrl))
-                                        .setTitle(title)
-                                        .setDescription("CGJ Vertretungsplan wird heruntergeladen")
-                                        .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                                        .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-                                        .setAllowedOverMetered(true)
-                                        .setAllowedOverRoaming(true)
-
-                                    val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                                    downloadManager.enqueue(request)
+                                    val mimeType = if (currentSubstitutionPdfUrl != null) "application/pdf" else "image/png"
+                                    downloadFile(context, downloadUrl, fileName, mimeType)
                                 } else {
                                     // Fallback: Versuche die URLs neu zu laden
                                     substitutionReloadTrigger.value = !substitutionReloadTrigger.value
@@ -300,16 +345,7 @@ fun MainScreen(
                             // Download für Leistungsnachweise
                             IconButton(onClick = {
                                 if (currentGradesPdfUrl != null) {
-                                    val request = DownloadManager.Request(Uri.parse(currentGradesPdfUrl))
-                                        .setTitle("Leistungsnachweise.pdf")
-                                        .setDescription("CGJ Leistungsnachweise wird heruntergeladen")
-                                        .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                                        .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "Leistungsnachweise.pdf")
-                                        .setAllowedOverMetered(true)
-                                        .setAllowedOverRoaming(true)
-
-                                    val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                                    downloadManager.enqueue(request)
+                                    downloadFile(context, currentGradesPdfUrl!!, "Leistungsnachweise.pdf", "application/pdf")
                                 } else {
                                     // Fallback: Versuche die PDF-URL neu zu laden
                                     gradesPdfReloadTrigger.value = !gradesPdfReloadTrigger.value
@@ -337,6 +373,17 @@ fun MainScreen(
                                     text = { Text(if (useGreenTheme) "System Farben" else "Grünes Theme") },
                                     onClick = {
                                         onThemeChange(!useGreenTheme)
+                                        showMenu = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(if (useMoodleWebView) "Moodle-App verwenden" else "Moodle-Website einbetten") },
+                                    onClick = {
+                                        CoroutineScope(Dispatchers.IO).launch {
+                                            dataStore.edit { prefs ->
+                                                prefs[USE_MOODLE_WEBVIEW] = !useMoodleWebView
+                                            }
+                                        }
                                         showMenu = false
                                     }
                                 )
@@ -411,7 +458,7 @@ fun MainScreen(
         when (selectedTab) {
             0 -> SubstitutionScreen(Modifier.padding(innerPadding))
             1 -> FoodScreen(Modifier.padding(innerPadding))
-            2 -> MoodleScreen(Modifier.padding(innerPadding))
+            2 -> if (useMoodleWebView) MoodleWebViewScreen(Modifier.padding(innerPadding)) else MoodleScreen(Modifier.padding(innerPadding))
             3 -> GradesScreen(
                 modifier = Modifier.padding(innerPadding),
                 selectedGradesTab = selectedGradesTab
@@ -488,15 +535,53 @@ fun SubstitutionScreen(modifier: Modifier = Modifier) {
                 }
             )
         } else if (showImage && imageUrl != null) {
-            // Bild anzeigen
-            AsyncImage(
-                model = imageUrl,
-                contentDescription = "Vertretungsplan",
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit,
-                onSuccess = { isLoading = false },
-                onError = { isLoading = false }
-            )
+            // Bild anzeigen mit Zoom
+            var scale by remember { mutableStateOf(1f) }
+            var offsetX by remember { mutableStateOf(0f) }
+            var offsetY by remember { mutableStateOf(0f) }
+            var lastScale by remember { mutableStateOf(1f) }
+            var lastOffsetX by remember { mutableStateOf(0f) }
+            var lastOffsetY by remember { mutableStateOf(0f) }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            scale = (lastScale * zoom).coerceIn(1f, 5f)
+                            offsetX = (lastOffsetX + pan.x).coerceIn(-1000f, 1000f)
+                            offsetY = (lastOffsetY + pan.y).coerceIn(-1000f, 1000f)
+                        }
+                    }
+                    .pointerInput(scale, offsetX, offsetY) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                if (event.changes.all { it.changedToUp() }) {
+                                    lastScale = scale
+                                    lastOffsetX = offsetX
+                                    lastOffsetY = offsetY
+                                }
+                            }
+                        }
+                    }
+            ) {
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = "Vertretungsplan",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer(
+                            scaleX = scale,
+                            scaleY = scale,
+                            translationX = offsetX,
+                            translationY = offsetY
+                        ),
+                    contentScale = ContentScale.Fit,
+                    onSuccess = { isLoading = false },
+                    onError = { isLoading = false }
+                )
+            }
         } else if (pdfUrl == null && imageUrl == null) {
             // Keine Daten verfügbar
             Box(
@@ -610,6 +695,60 @@ fun MoodleScreen(modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface
             )
+        }
+    }
+}
+
+@Composable
+fun MoodleWebViewScreen(modifier: Modifier = Modifier) {
+    var isLoading by remember { mutableStateOf(true) }
+    val context = LocalContext.current
+    Box(modifier = modifier.fillMaxSize()) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    settings.apply {
+                        javaScriptEnabled = true
+                        domStorageEnabled = true
+                        databaseEnabled = true
+                        allowFileAccess = true
+                        allowContentAccess = true
+                        cacheMode = WebSettings.LOAD_NO_CACHE
+                    }
+                    webViewClient = object : WebViewClient() {
+                        override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
+                            val url = request?.url?.toString() ?: return false
+                            if (url.endsWith(".pdf", true) || url.endsWith(".jpg", true) || url.endsWith(".jpeg", true) || url.endsWith(".png", true) || url.endsWith(".gif", true)) {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                ctx.startActivity(intent)
+                                return true
+                            }
+                            return false
+                        }
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            super.onPageFinished(view, url)
+                            isLoading = false
+                        }
+                    }
+                    loadUrl("https://moodle.jsp.jena.de")
+                }
+            },
+            update = { webView ->
+                // Kein Reload-Trigger nötig
+            }
+        )
+        if (isLoading) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(50.dp),
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
         }
     }
 }
