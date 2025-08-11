@@ -4,7 +4,9 @@ A comprehensive Android application for school management with features includin
 
 ## 🚀 Quick Start
 
-Use the prebuilt apk found on the releases page 
+Use the prebuilt apk found on the releases page
+
+Or build your app:
 
 ### Automatic Setup (Recommended)
 
