@@ -15,6 +15,15 @@ import android.os.Environment
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,8 +46,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -71,9 +81,14 @@ import java.io.IOException
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTransformGestures
 
 val android.content.Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 private val USE_GREEN_THEME = booleanPreferencesKey("use_green_theme")
+private val MOODLE_EMBED = booleanPreferencesKey("moodle_embed")
 private const val GRADES_BASE_URL = "https://www.c-g-j.de"
 private const val GRADES_LIST_URL = "$GRADES_BASE_URL/aktuelles-und-termine/leistungsnachweise/"
 private const val SUBSTITUTION_BASE_URL = "https://www.c-g-j.de"
@@ -190,6 +205,11 @@ class MainActivity : ComponentActivity() {
                     preferences[USE_GREEN_THEME] ?: !useDynamicColor
                 }
                 .collectAsState(initial = !useDynamicColor)
+            val embedMoodle by dataStore.data
+                .map { preferences ->
+                    preferences[MOODLE_EMBED] ?: false
+                }
+                .collectAsState(initial = false)
             
             CGJTheme(
                 dynamicColor = !useGreenTheme
@@ -200,6 +220,14 @@ class MainActivity : ComponentActivity() {
                         CoroutineScope(Dispatchers.IO).launch {
                             dataStore.edit { preferences ->
                                 preferences[USE_GREEN_THEME] = newValue
+                            }
+                        }
+                    },
+                    embedMoodle = embedMoodle,
+                    onMoodleEmbedChange = { newValue ->
+                        CoroutineScope(Dispatchers.IO).launch {
+                            dataStore.edit { preferences ->
+                                preferences[MOODLE_EMBED] = newValue
                             }
                         }
                     }
@@ -213,7 +241,9 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainScreen(
     useGreenTheme: Boolean,
-    onThemeChange: (Boolean) -> Unit
+    onThemeChange: (Boolean) -> Unit,
+    embedMoodle: Boolean,
+    onMoodleEmbedChange: (Boolean) -> Unit
 ) {
     var selectedTab by remember { mutableStateOf(0) }
     var showMenu by remember { mutableStateOf(false) }
@@ -227,22 +257,27 @@ fun MainScreen(
         TabItem("Leistungen", R.drawable.ic_grades)
     )
 
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
     Scaffold(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             Column {
-                TopAppBar(
+                LargeTopAppBar(
                     title = { 
                         Text(
                             "CGJ",
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = MaterialTheme.colorScheme.onSurface
                         ) 
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                        actionIconContentColor = MaterialTheme.colorScheme.onSurface
                     ),
+                    scrollBehavior = scrollBehavior,
                     actions = {
                         // Reload Button für alle Screens (außer Moodle)
                         if (selectedTab != 2) { // Moodle-Tab überspringen
@@ -340,17 +375,24 @@ fun MainScreen(
                                         showMenu = false
                                     }
                                 )
+                                DropdownMenuItem(
+                                    text = { Text(if (embedMoodle) "Moodle-App benutzen" else "Moodle einbetten") },
+                                    onClick = {
+                                        onMoodleEmbedChange(!embedMoodle)
+                                        showMenu = false
+                                    }
+                                )
                             }
                         }
                     }
                 )
                 
                 // Grades Tab Row (nur wenn Leistungen-Tab ausgewählt ist)
-                if (selectedTab == 3) {
+                AnimatedVisibility(visible = selectedTab == 3) {
                     TabRow(
                         selectedTabIndex = selectedGradesTab,
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Tab(
@@ -371,7 +413,7 @@ fun MainScreen(
         },
         bottomBar = {
             NavigationBar(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
             ) {
                 tabs.forEachIndexed { index, tab ->
                     NavigationBarItem(
@@ -384,7 +426,7 @@ fun MainScreen(
                                 tint = if (selectedTab == index) 
                                     MaterialTheme.colorScheme.primary 
                                 else 
-                                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                             ) 
                         },
                         label = { 
@@ -393,32 +435,51 @@ fun MainScreen(
                                 color = if (selectedTab == index) 
                                     MaterialTheme.colorScheme.primary 
                                 else 
-                                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                             ) 
                         },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = MaterialTheme.colorScheme.primary,
                             selectedTextColor = MaterialTheme.colorScheme.primary,
                             indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
-                            unselectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                            unselectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                         )
                     )
                 }
             }
         }
     ) { innerPadding ->
-        when (selectedTab) {
-            0 -> SubstitutionScreen(Modifier.padding(innerPadding))
-            1 -> FoodScreen(Modifier.padding(innerPadding))
-            2 -> MoodleScreen(Modifier.padding(innerPadding))
-            3 -> GradesScreen(
-                modifier = Modifier.padding(innerPadding),
-                selectedGradesTab = selectedGradesTab
-            )
+        AnimatedContent(
+            targetState = selectedTab,
+            transitionSpec = {
+                if (targetState > initialState) {
+                    slideInHorizontally(animationSpec = tween(220)) { it } + fadeIn() togetherWith
+                    slideOutHorizontally(animationSpec = tween(220)) { -it } + fadeOut()
+                } else {
+                    slideInHorizontally(animationSpec = tween(220)) { -it } + fadeIn() togetherWith
+                    slideOutHorizontally(animationSpec = tween(220)) { it } + fadeOut()
+                }
+            }, label = "TabTransition"
+        ) { tab ->
+            when (tab) {
+                0 -> SubstitutionScreen(Modifier.padding(innerPadding))
+                1 -> FoodScreen(Modifier.padding(innerPadding))
+                2 -> MoodleScreen(Modifier.padding(innerPadding), embedMoodle = embedMoodle)
+                3 -> GradesScreen(
+                    modifier = Modifier.padding(innerPadding),
+                    selectedGradesTab = selectedGradesTab
+                )
+            }
+        }
+
+        BackHandler(enabled = selectedTab == 3 && selectedGradesTab > 0) {
+            selectedGradesTab = 0
         }
     }
 }
+
+
 
 data class TabItem(val title: String, val iconRes: Int)
 
@@ -488,15 +549,40 @@ fun SubstitutionScreen(modifier: Modifier = Modifier) {
                 }
             )
         } else if (showImage && imageUrl != null) {
-            // Bild anzeigen
-            AsyncImage(
-                model = imageUrl,
-                contentDescription = "Vertretungsplan",
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit,
-                onSuccess = { isLoading = false },
-                onError = { isLoading = false }
-            )
+            // Bild mit Pinch-to-Zoom anzeigen
+            var scale by remember { mutableStateOf(1f) }
+            var offset by remember { mutableStateOf(Offset.Zero) }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            val newScale = (scale * zoom).coerceIn(1f, 5f)
+                            // Adjust offset to pan while scaled
+                            val newOffset = offset + pan
+                            scale = newScale
+                            offset = newOffset
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = "Vertretungsplan",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer(
+                            scaleX = scale,
+                            scaleY = scale,
+                            translationX = offset.x,
+                            translationY = offset.y
+                        ),
+                    contentScale = ContentScale.Fit,
+                    onSuccess = { isLoading = false },
+                    onError = { isLoading = false }
+                )
+            }
         } else if (pdfUrl == null && imageUrl == null) {
             // Keine Daten verfügbar
             Box(
@@ -585,31 +671,97 @@ fun FoodScreen(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun MoodleScreen(modifier: Modifier = Modifier) {
+fun MoodleScreen(modifier: Modifier = Modifier, embedMoodle: Boolean) {
     val context = LocalContext.current
+    var isLoading by remember { mutableStateOf(true) }
     
-    // Automatische Weiterleitung zur Moodle-App beim ersten Laden
-    LaunchedEffect(Unit) {
-        openMoodleApp(context)
-    }
-    
-    Box(
-        modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally
+    if (!embedMoodle) {
+        // Automatische Weiterleitung zur Moodle-App beim ersten Laden
+        LaunchedEffect(Unit) {
+            openMoodleApp(context)
+        }
+        Box(
+            modifier = modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
         ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(50.dp),
-                color = MaterialTheme.colorScheme.primary
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(50.dp),
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "Weiterleitung zur Moodle-App...",
+                    modifier = Modifier.padding(top = 16.dp),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+    } else {
+        // Eingebettete Moodle-WebView mit Download-Weiterleitung in den Browser
+        Box(modifier = modifier.fillMaxSize()) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { ctx ->
+                    WebView(ctx).apply {
+                        settings.apply {
+                            javaScriptEnabled = true
+                            domStorageEnabled = true
+                            databaseEnabled = true
+                            allowFileAccess = true
+                            allowContentAccess = true
+                            cacheMode = WebSettings.LOAD_NO_CACHE
+                            builtInZoomControls = true
+                            displayZoomControls = false
+                            useWideViewPort = true
+                            loadWithOverviewMode = true
+                        }
+                        webViewClient = object : WebViewClient() {
+                            override fun onPageFinished(view: WebView?, url: String?) {
+                                super.onPageFinished(view, url)
+                                isLoading = false
+                            }
+
+                            override fun shouldOverrideUrlLoading(
+                                view: WebView?,
+                                request: android.webkit.WebResourceRequest?
+                            ): Boolean {
+                                val url = request?.url?.toString() ?: return false
+                                val lower = url.lowercase()
+                                val isFile = listOf(
+                                    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".zip", ".rar", ".7z"
+                                ).any { lower.endsWith(it) }
+                                if (isFile) {
+                                    try {
+                                        ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                    } catch (_: Exception) { }
+                                    return true
+                                }
+                                return false
+                            }
+                        }
+                        setDownloadListener { url, _, _, _, _ ->
+                            try {
+                                ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                            } catch (_: Exception) { }
+                        }
+                        loadUrl("https://moodle.jsp.jena.de/")
+                    }
+                }
             )
-            Text(
-                text = "Weiterleitung zur Moodle-App...",
-                modifier = Modifier.padding(top = 16.dp),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            if (isLoading) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(50.dp),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         }
     }
 }
