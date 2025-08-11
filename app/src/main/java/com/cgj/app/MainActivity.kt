@@ -547,7 +547,7 @@ fun SubstitutionScreen(modifier: Modifier = Modifier) {
                 modifier = Modifier
                     .fillMaxSize()
                     .pointerInput(Unit) {
-                        detectTransformGestures { _, pan, zoom, _ ->
+                        detectTransformGestures { _, pan: androidx.compose.ui.geometry.Offset, zoom: Float, _ ->
                             scale = (lastScale * zoom).coerceIn(1f, 5f)
                             offsetX = (lastOffsetX + pan.x).coerceIn(-1000f, 1000f)
                             offsetY = (lastOffsetY + pan.y).coerceIn(-1000f, 1000f)
@@ -916,3 +916,6 @@ private fun PDFView.loadPdf(url: String, onLoadComplete: () -> Unit) {
         }
     }
 }
+
+private fun androidx.compose.ui.input.pointer.PointerInputChange.changedToUp(): Boolean =
+    this.previousPressed && !this.pressed
