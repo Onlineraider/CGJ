@@ -4,6 +4,8 @@ A comprehensive Android application for school management with features includin
 
 ## 🚀 Quick Start
 
+Use the prebuilt apk found on the releases page 
+
 ### Automatic Setup (Recommended)
 
 The easiest way to get started is using our automatic setup scripts:
@@ -161,4 +163,4 @@ docker run -v $(pwd):/app cgj-android ./gradlew assembleDebug
 
 ## 📄 License
 
-This project is part of the CGJ school management system. 
+This project is not licensed 
