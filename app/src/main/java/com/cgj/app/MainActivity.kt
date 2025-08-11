@@ -77,6 +77,7 @@ import androidx.compose.ui.input.pointer.awaitPointerEvent
 import androidx.compose.ui.input.pointer.pointerEvent
 import androidx.compose.ui.input.pointer.pointerEventScope
 import androidx.compose.ui.input.pointer.detectTransformGestures
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.graphics.graphicsLayer
 import android.provider.MediaStore
 import android.widget.Toast
