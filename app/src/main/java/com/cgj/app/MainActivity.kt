@@ -15,6 +15,15 @@ import android.os.Environment
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,8 +46,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -247,22 +257,27 @@ fun MainScreen(
         TabItem("Leistungen", R.drawable.ic_grades)
     )
 
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
     Scaffold(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             Column {
-                TopAppBar(
+                LargeTopAppBar(
                     title = { 
                         Text(
                             "CGJ",
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = MaterialTheme.colorScheme.onSurface
                         ) 
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                        actionIconContentColor = MaterialTheme.colorScheme.onSurface
                     ),
+                    scrollBehavior = scrollBehavior,
                     actions = {
                         // Reload Button für alle Screens (außer Moodle)
                         if (selectedTab != 2) { // Moodle-Tab überspringen
@@ -373,11 +388,11 @@ fun MainScreen(
                 )
                 
                 // Grades Tab Row (nur wenn Leistungen-Tab ausgewählt ist)
-                if (selectedTab == 3) {
+                AnimatedVisibility(visible = selectedTab == 3) {
                     TabRow(
                         selectedTabIndex = selectedGradesTab,
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Tab(
@@ -398,7 +413,7 @@ fun MainScreen(
         },
         bottomBar = {
             NavigationBar(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
             ) {
                 tabs.forEachIndexed { index, tab ->
                     NavigationBarItem(
@@ -411,7 +426,7 @@ fun MainScreen(
                                 tint = if (selectedTab == index) 
                                     MaterialTheme.colorScheme.primary 
                                 else 
-                                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                             ) 
                         },
                         label = { 
@@ -420,32 +435,51 @@ fun MainScreen(
                                 color = if (selectedTab == index) 
                                     MaterialTheme.colorScheme.primary 
                                 else 
-                                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                             ) 
                         },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = MaterialTheme.colorScheme.primary,
                             selectedTextColor = MaterialTheme.colorScheme.primary,
                             indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
-                            unselectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                            unselectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                         )
                     )
                 }
             }
         }
     ) { innerPadding ->
-        when (selectedTab) {
-            0 -> SubstitutionScreen(Modifier.padding(innerPadding))
-            1 -> FoodScreen(Modifier.padding(innerPadding))
-            2 -> MoodleScreen(Modifier.padding(innerPadding), embedMoodle = embedMoodle)
-            3 -> GradesScreen(
-                modifier = Modifier.padding(innerPadding),
-                selectedGradesTab = selectedGradesTab
-            )
+        AnimatedContent(
+            targetState = selectedTab,
+            transitionSpec = {
+                if (targetState > initialState) {
+                    slideInHorizontally(animationSpec = tween(220)) { it } + fadeIn() togetherWith
+                    slideOutHorizontally(animationSpec = tween(220)) { -it } + fadeOut()
+                } else {
+                    slideInHorizontally(animationSpec = tween(220)) { -it } + fadeIn() togetherWith
+                    slideOutHorizontally(animationSpec = tween(220)) { it } + fadeOut()
+                }
+            }, label = "TabTransition"
+        ) { tab ->
+            when (tab) {
+                0 -> SubstitutionScreen(Modifier.padding(innerPadding))
+                1 -> FoodScreen(Modifier.padding(innerPadding))
+                2 -> MoodleScreen(Modifier.padding(innerPadding), embedMoodle = embedMoodle)
+                3 -> GradesScreen(
+                    modifier = Modifier.padding(innerPadding),
+                    selectedGradesTab = selectedGradesTab
+                )
+            }
+        }
+
+        BackHandler(enabled = selectedTab == 3 && selectedGradesTab > 0) {
+            selectedGradesTab = 0
         }
     }
 }
+
+
 
 data class TabItem(val title: String, val iconRes: Int)
 

@@ -14,6 +14,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.dp
+import androidx.compose.material3.Shapes
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.core.view.WindowCompat
 
 private val DarkColorScheme = darkColorScheme(
@@ -26,7 +29,7 @@ private val DarkColorScheme = darkColorScheme(
     onSecondaryContainer = Color(0xFFC8E6C9),
     tertiaryContainer = Color(0xFF388E3C),
     onTertiaryContainer = Color(0xFFDCEDC8),
-    surface = Color(0xFF1B5E20),
+    surface = Color(0xFF121212),
     onSurface = Color(0xFFE8F5E9),
     surfaceVariant = Color(0xFF2E7D32),
     onSurfaceVariant = Color(0xFFC8E6C9),
@@ -43,11 +46,19 @@ private val LightColorScheme = lightColorScheme(
     onSecondaryContainer = Color(0xFF2E7D32),
     tertiaryContainer = Color(0xFFDCEDC8),
     onTertiaryContainer = Color(0xFF388E3C),
-    surface = Color(0xFFE8F5E9),
-    onSurface = Color(0xFF1B5E20),
+    surface = Color(0xFFFFFBFE),
+    onSurface = Color(0xFF1B1B1F),
     surfaceVariant = Color(0xFFC8E6C9),
     onSurfaceVariant = Color(0xFF2E7D32),
     surfaceTint = Color(0xFF43A047)
+)
+
+private val ExpressiveShapes = Shapes(
+    extraSmall = RoundedCornerShape(12.dp),
+    small = RoundedCornerShape(16.dp),
+    medium = RoundedCornerShape(20.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(28.dp)
 )
 
 @Composable
@@ -68,7 +79,8 @@ fun CGJTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = colorScheme.primary.toArgb()
+            // Edge-to-edge: transparent status bar, rely on content to draw behind
+            window.statusBarColor = Color.Transparent.toArgb()
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
         }
     }
@@ -76,6 +88,7 @@ fun CGJTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography,
+        shapes = ExpressiveShapes,
         content = content
     )
 }
