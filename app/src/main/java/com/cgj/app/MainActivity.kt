@@ -70,6 +70,23 @@ import java.io.IOException
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.draw.scale
+import androidx.compose.foundation.layout.fillMaxWidth
 
 val android.content.Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 private val USE_GREEN_THEME = booleanPreferencesKey("use_green_theme")
@@ -200,6 +217,8 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private typealias TabBackHandler = () -> Boolean
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
@@ -210,7 +229,30 @@ fun MainScreen(
     var showMenu by remember { mutableStateOf(false) }
     var selectedGradesTab by remember { mutableStateOf(0) }
     val context = LocalContext.current
-    
+    val activity = LocalContext.current as? android.app.Activity
+
+    // Track previous tab to animate direction
+    var lastSelectedTab by remember { mutableStateOf(0) }
+
+    // Child-provided back handler (e.g., WebView back)
+    val registeredTabBackHandler = remember { mutableStateOf<TabBackHandler?>(null) }
+
+    fun handleBack(): Boolean {
+        registeredTabBackHandler.value?.let { if (it()) return true }
+        return if (selectedTab != 0) {
+            lastSelectedTab = selectedTab
+            selectedTab = 0
+            true
+        } else {
+            activity?.finish()
+            true
+        }
+    }
+
+    BackHandler(enabled = true) {
+        handleBack()
+    }
+
     val tabs = listOf(
         TabItem("Vertretung", R.drawable.ic_substitution),
         TabItem("Essen", R.drawable.ic_food),
@@ -327,8 +369,12 @@ fun MainScreen(
                     }
                 )
                 
-                // Grades Tab Row (nur wenn Leistungen-Tab ausgewählt ist)
-                if (selectedTab == 3) {
+                // Grades Tab Row (animated visibility)
+                AnimatedVisibility(
+                    visible = selectedTab == 3,
+                    enter = slideInVertically(initialOffsetY = { -it / 2 }, animationSpec = tween(350)) + fadeIn(tween(350)),
+                    exit = slideOutVertically(targetOffsetY = { -it / 2 }, animationSpec = tween(250)) + fadeOut(tween(250))
+                ) {
                     TabRow(
                         selectedTabIndex = selectedGradesTab,
                         containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -356,23 +402,33 @@ fun MainScreen(
                 containerColor = MaterialTheme.colorScheme.primaryContainer
             ) {
                 tabs.forEachIndexed { index, tab ->
+                    val isSelected by remember(selectedTab) { derivedStateOf { selectedTab == index } }
+                    val iconScale by animateFloatAsState(
+                        targetValue = if (isSelected) 1.2f else 1.0f,
+                        animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
+                        label = "iconScale"
+                    )
                     NavigationBarItem(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
+                        selected = isSelected,
+                        onClick = {
+                            lastSelectedTab = selectedTab
+                            selectedTab = index
+                        },
                         icon = { 
                             Icon(
                                 painter = painterResource(tab.iconRes), 
                                 contentDescription = tab.title,
-                                tint = if (selectedTab == index) 
+                                tint = if (isSelected) 
                                     MaterialTheme.colorScheme.primary 
                                 else 
-                                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                                modifier = Modifier.scale(iconScale)
                             ) 
                         },
                         label = { 
                             Text(
                                 tab.title,
-                                color = if (selectedTab == index) 
+                                color = if (isSelected) 
                                     MaterialTheme.colorScheme.primary 
                                 else 
                                     MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
@@ -390,14 +446,36 @@ fun MainScreen(
             }
         }
     ) { innerPadding ->
-        when (selectedTab) {
-            0 -> SubstitutionScreen(Modifier.padding(innerPadding))
-            1 -> FoodScreen(Modifier.padding(innerPadding))
-            2 -> MoodleScreen(Modifier.padding(innerPadding))
-            3 -> GradesScreen(
-                modifier = Modifier.padding(innerPadding),
-                selectedGradesTab = selectedGradesTab
-            )
+        val targetTab = selectedTab
+        AnimatedContent(
+            targetState = targetTab,
+            transitionSpec = {
+                val toLeft = (targetState > initialState)
+                val slideIn = slideInHorizontally(
+                    animationSpec = tween(400, easing = FastOutSlowInEasing),
+                    initialOffsetX = { if (toLeft) it else -it }
+                ) + fadeIn(animationSpec = tween(200))
+                val slideOut = slideOutHorizontally(
+                    animationSpec = tween(400, easing = FastOutSlowInEasing),
+                    targetOffsetX = { if (toLeft) -it / 2 else it / 2 }
+                ) + fadeOut(animationSpec = tween(200))
+                slideIn togetherWith slideOut
+            },
+            label = "TabAnimatedContent"
+        ) { tabIndex ->
+            when (tabIndex) {
+                0 -> SubstitutionScreen(Modifier.padding(innerPadding))
+                1 -> FoodScreen(
+                    modifier = Modifier.padding(innerPadding),
+                    onRegisterBackHandler = { handler -> registeredTabBackHandler.value = handler }
+                )
+                2 -> MoodleScreen(Modifier.padding(innerPadding))
+                3 -> GradesScreen(
+                    modifier = Modifier.padding(innerPadding),
+                    selectedGradesTab = selectedGradesTab,
+                    onRegisterBackHandler = { handler -> registeredTabBackHandler.value = handler }
+                )
+            }
         }
     }
 }
@@ -489,15 +567,30 @@ fun SubstitutionScreen(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun FoodScreen(modifier: Modifier = Modifier) {
+fun FoodScreen(modifier: Modifier = Modifier, onRegisterBackHandler: (TabBackHandler?) -> Unit) {
     var isLoading by remember { mutableStateOf(true) }
     val reloadTrigger by foodReloadTrigger
+    val webViewRef = remember { mutableStateOf<WebView?>(null) }
+
+    DisposableEffect(Unit) {
+        onRegisterBackHandler {
+            val view = webViewRef.value
+            if (view != null && view.canGoBack()) {
+                view.goBack()
+                true
+            } else {
+                false
+            }
+        }
+        onDispose { onRegisterBackHandler(null) }
+    }
     
     Box(modifier = modifier.fillMaxSize()) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { context ->
                 WebView(context).apply {
+                    webViewRef.value = this
                     settings.apply {
                         javaScriptEnabled = true
                         domStorageEnabled = true
@@ -570,24 +663,40 @@ fun MoodleScreen(modifier: Modifier = Modifier) {
 @Composable
 fun GradesScreen(
     modifier: Modifier = Modifier,
-    selectedGradesTab: Int
+    selectedGradesTab: Int,
+    onRegisterBackHandler: (TabBackHandler?) -> Unit
 ) {
     when (selectedGradesTab) {
-        0 -> HomeInfoPointScreen(modifier)
+        0 -> HomeInfoPointScreen(modifier, onRegisterBackHandler)
         1 -> GradesPdfScreen(modifier)
     }
 }
 
 @Composable
-fun HomeInfoPointScreen(modifier: Modifier = Modifier) {
+fun HomeInfoPointScreen(modifier: Modifier = Modifier, onRegisterBackHandler: (TabBackHandler?) -> Unit) {
     var isLoading by remember { mutableStateOf(true) }
     val reloadTrigger by homeInfoPointReloadTrigger
+    val webViewRef = remember { mutableStateOf<WebView?>(null) }
+
+    DisposableEffect(Unit) {
+        onRegisterBackHandler {
+            val view = webViewRef.value
+            if (view != null && view.canGoBack()) {
+                view.goBack()
+                true
+            } else {
+                false
+            }
+        }
+        onDispose { onRegisterBackHandler(null) }
+    }
     
     Box(modifier = modifier.fillMaxSize()) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { context ->
                 WebView(context).apply {
+                    webViewRef.value = this
                     settings.apply {
                         javaScriptEnabled = true
                         domStorageEnabled = true
